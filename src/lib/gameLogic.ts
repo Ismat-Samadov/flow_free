@@ -216,3 +216,49 @@ export function getCoverage(state: GameState): number {
   );
   return Math.round((covered.size / total) * 100);
 }
+
+/**
+ * Apply one hint step from a pre-computed solution.
+ * Finds the first incomplete flow, checks whether the user's current path
+ * is a prefix of the solution path, then extends by one cell.
+ * If the paths diverge the color is reset to its start before the first step.
+ */
+export function applyHint(
+  state: GameState,
+  solution: import("./solver").Solution
+): GameState {
+  if (state.solved || state.paused) return state;
+
+  // First incomplete flow
+  const incompleteFlow = state.flows.find((f) => !f.complete);
+  if (!incompleteFlow) return state;
+
+  const { color } = incompleteFlow;
+  const solutionPath = solution[color];
+  if (!solutionPath || solutionPath.length < 2) return state;
+
+  const currentPath = incompleteFlow.path;
+
+  // Check whether currentPath is a valid prefix of the solution path
+  let matchLen = 0;
+  for (let i = 0; i < currentPath.length; i++) {
+    if (i < solutionPath.length && samePos(currentPath[i], solutionPath[i])) {
+      matchLen = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  if (matchLen === currentPath.length && matchLen < solutionPath.length) {
+    // Path matches so far — extend by one step
+    const nextPos = solutionPath[matchLen];
+    const withActive = { ...state, activeColor: color };
+    return endDrag(extendPath(withActive, nextPos));
+  }
+
+  // Paths diverged — reset this color to its start dot and apply first step
+  const startDot = state.puzzle.dots.find((d) => d.color === color)!;
+  let newState = startDrag(state, startDot.position);
+  newState = extendPath(newState, solutionPath[1]);
+  return endDrag(newState);
+}

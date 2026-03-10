@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  applyHint,
   createInitialState,
   endDrag,
   extendPath,
@@ -13,6 +14,7 @@ import {
   resetPuzzle,
   startDrag,
 } from "@/lib/gameLogic";
+import { solvePuzzle, Solution } from "@/lib/solver";
 import { GameState, Position, Puzzle } from "@/lib/types";
 import { LS_KEY } from "@/lib/constants";
 
@@ -20,9 +22,11 @@ export function useGame(puzzle: Puzzle) {
   const [state, setState] = useState<GameState>(() =>
     createInitialState(puzzle)
   );
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const solutionRef = useRef<Solution | null>(null);
+  const [hintAvailable, setHintAvailable] = useState(false);
 
-  // ── Start/stop timer ──────────────────────────────────────
+  // ── Timer ─────────────────────────────────────────────────
   const startTimer = useCallback(() => {
     if (timerRef.current) return;
     timerRef.current = setInterval(() => {
@@ -44,6 +48,17 @@ export function useGame(puzzle: Puzzle) {
   useEffect(() => {
     stopTimer();
     setState(createInitialState(puzzle));
+    solutionRef.current = null;
+    setHintAvailable(false);
+
+    // Solve asynchronously to avoid blocking the main thread
+    const timerId = setTimeout(() => {
+      const sol = solvePuzzle(puzzle);
+      solutionRef.current = sol;
+      setHintAvailable(sol !== null);
+    }, 50);
+
+    return () => clearTimeout(timerId);
   }, [puzzle, stopTimer]);
 
   // ── Auto-start timer on first move ───────────────────────
@@ -57,33 +72,22 @@ export function useGame(puzzle: Puzzle) {
     });
   }, [startTimer]);
 
-  // ── Stop timer when solved ────────────────────────────────
+  // ── Stop timer + save high score when solved ──────────────
   useEffect(() => {
     if (state.solved) {
       stopTimer();
-      // Persist high score
       try {
-        const key = `${LS_KEY}_${puzzle.id}`;
-        const existing = localStorage.getItem(key);
-        const prev = existing ? JSON.parse(existing) : null;
-        const entry = {
-          moves: state.moveCount,
-          time: state.elapsedTime,
-        };
-        if (
-          !prev ||
-          entry.moves < prev.moves ||
-          (entry.moves === prev.moves && entry.time < prev.time)
-        ) {
+        const key  = `${LS_KEY}_${puzzle.id}`;
+        const prev = (() => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } })();
+        const entry = { moves: state.moveCount, time: state.elapsedTime };
+        if (!prev || entry.moves < prev.moves || (entry.moves === prev.moves && entry.time < prev.time)) {
           localStorage.setItem(key, JSON.stringify(entry));
         }
-      } catch (_) {
-        // ignore localStorage errors in SSR/private mode
-      }
+      } catch { /* ignore */ }
     }
   }, [state.solved, state.moveCount, state.elapsedTime, puzzle.id, stopTimer]);
 
-  // ── Cleanup on unmount ────────────────────────────────────
+  // ── Cleanup ───────────────────────────────────────────────
   useEffect(() => () => stopTimer(), [stopTimer]);
 
   // ── Public API ────────────────────────────────────────────
@@ -125,17 +129,18 @@ export function useGame(puzzle: Puzzle) {
     });
   }, [startTimer, stopTimer]);
 
-  const getBestScore = useCallback((): {
-    moves: number;
-    time: number;
-  } | null => {
+  /** Apply one step from the pre-computed solution */
+  const onHint = useCallback(() => {
+    if (!solutionRef.current || state.solved || state.paused) return;
+    handleFirstMove();
+    setState((prev) => applyHint(prev, solutionRef.current!));
+  }, [state.solved, state.paused, handleFirstMove]);
+
+  const getBestScore = useCallback((): { moves: number; time: number } | null => {
     try {
-      const key = `${LS_KEY}_${puzzle.id}`;
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(`${LS_KEY}_${puzzle.id}`);
       return raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      return null;
-    }
+    } catch { return null; }
   }, [puzzle.id]);
 
   const coverage = getCoverage(state);
@@ -143,11 +148,13 @@ export function useGame(puzzle: Puzzle) {
   return {
     state,
     coverage,
+    hintAvailable,
     onCellDown,
     onCellEnter,
     onPointerUp,
     onReset,
     onTogglePause,
+    onHint,
     getBestScore,
   };
 }

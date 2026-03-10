@@ -1,12 +1,13 @@
 // ============================================================
-// useSound.ts — Procedurally-generated sound effects (no files)
+// useSound.ts — Procedurally-generated sound effects + music
+// No audio files needed — everything is synthesised via the
+// Web Audio API at runtime.
 // ============================================================
 
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Tiny Web Audio helper to create sounds programmatically */
 function createAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   try {
@@ -18,7 +19,7 @@ function createAudioContext(): AudioContext | null {
   }
 }
 
-/** Play a short beep at a given frequency */
+/** Play a short synthesised tone */
 function playTone(
   ctx: AudioContext,
   frequency: number,
@@ -38,71 +39,212 @@ function playTone(
   osc.stop(ctx.currentTime + duration);
 }
 
-export function useSound() {
-  const ctxRef = useRef<AudioContext | null>(null);
-  const [enabled, setEnabled] = useState(true);
+// ── Ambient background music ────────────────────────────────
+// A gentle neon-ambient loop: low drone + arpeggiated pad notes.
 
-  // Initialise AudioContext lazily on first interaction
+const ARP_NOTES  = [220, 261, 330, 392, 440, 523, 659, 523, 440, 392]; // A minor-ish
+const ARP_BPM    = 100; // beats per minute → ~600 ms per step
+
+interface MusicNodes {
+  drone: OscillatorNode;
+  lfo: OscillatorNode;
+  masterGain: GainNode;
+  intervalId: ReturnType<typeof setInterval>;
+}
+
+function startAmbientMusic(ctx: AudioContext): MusicNodes {
+  const masterGain = ctx.createGain();
+  masterGain.gain.setValueAtTime(0, ctx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 2); // fade-in
+  masterGain.connect(ctx.destination);
+
+  // Low drone — A1 (55 Hz)
+  const droneGain = ctx.createGain();
+  droneGain.gain.setValueAtTime(0.25, ctx.currentTime);
+  droneGain.connect(masterGain);
+
+  const drone = ctx.createOscillator();
+  drone.type = "sine";
+  drone.frequency.setValueAtTime(55, ctx.currentTime);
+  drone.connect(droneGain);
+  drone.start();
+
+  // Very slow LFO for subtle tremolo on the drone
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.setValueAtTime(0.06, ctx.currentTime);
+  lfoGain.connect(droneGain.gain);
+
+  const lfo = ctx.createOscillator();
+  lfo.type = "sine";
+  lfo.frequency.setValueAtTime(0.18, ctx.currentTime);
+  lfo.connect(lfoGain);
+  lfo.start();
+
+  // Arpeggiated pad notes
+  let noteIdx = 0;
+  const stepMs = Math.round((60 / ARP_BPM) * 1000);
+
+  const intervalId = setInterval(() => {
+    const freq = ARP_NOTES[noteIdx % ARP_NOTES.length];
+    noteIdx++;
+
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    env.gain.setValueAtTime(0, ctx.currentTime);
+    env.gain.linearRampToValueAtTime(0.07, ctx.currentTime + 0.05);
+    env.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + stepMs / 1000 * 1.4);
+    osc.connect(env);
+    env.connect(masterGain);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + stepMs / 1000 * 1.5);
+  }, stepMs);
+
+  return { drone, lfo, masterGain, intervalId };
+}
+
+function stopAmbientMusic(ctx: AudioContext, nodes: MusicNodes) {
+  clearInterval(nodes.intervalId);
+  nodes.masterGain.gain.setValueAtTime(nodes.masterGain.gain.value, ctx.currentTime);
+  nodes.masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+  setTimeout(() => {
+    try { nodes.drone.stop(); } catch { /* already stopped */ }
+    try { nodes.lfo.stop(); }   catch { /* already stopped */ }
+  }, 1600);
+}
+
+// ── Hook ────────────────────────────────────────────────────
+
+export function useSound() {
+  const ctxRef    = useRef<AudioContext | null>(null);
+  const musicRef  = useRef<MusicNodes | null>(null);
+
+  const [sfxEnabled,   setSfxEnabled]   = useState(true);
+  const [musicEnabled, setMusicEnabled] = useState(false);
+
+  // Lazy AudioContext initialiser (must be triggered by user gesture)
   const ensureCtx = useCallback(() => {
-    if (!ctxRef.current) {
-      ctxRef.current = createAudioContext();
-    }
-    if (ctxRef.current?.state === "suspended") {
-      ctxRef.current.resume();
-    }
+    if (!ctxRef.current) ctxRef.current = createAudioContext();
+    if (ctxRef.current?.state === "suspended") ctxRef.current.resume();
     return ctxRef.current;
   }, []);
 
-  // Load persisted preference
+  // Load persisted preferences
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("flowfree_sound");
-      if (stored !== null) setEnabled(JSON.parse(stored));
-    } catch (_) {}
+      const sfx   = localStorage.getItem("flowfree_sfx");
+      const music = localStorage.getItem("flowfree_music");
+      if (sfx   !== null) setSfxEnabled(JSON.parse(sfx));
+      if (music !== null) setMusicEnabled(JSON.parse(music));
+    } catch { /* ignore */ }
   }, []);
 
-  const toggleSound = useCallback(() => {
-    setEnabled((prev) => {
-      try {
-        localStorage.setItem("flowfree_sound", JSON.stringify(!prev));
-      } catch (_) {}
+  // Sync background music with musicEnabled state
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!musicEnabled) {
+      if (ctx && musicRef.current) {
+        stopAmbientMusic(ctx, musicRef.current);
+        musicRef.current = null;
+      }
+      return;
+    }
+    // Music is enabled — start it if not running
+    if (!musicRef.current && ctx) {
+      musicRef.current = startAmbientMusic(ctx);
+    }
+  }, [musicEnabled]);
+
+  // Stop music on unmount
+  useEffect(() => {
+    return () => {
+      const ctx = ctxRef.current;
+      if (ctx && musicRef.current) {
+        stopAmbientMusic(ctx, musicRef.current);
+        musicRef.current = null;
+      }
+    };
+  }, []);
+
+  const toggleSfx = useCallback(() => {
+    setSfxEnabled((prev) => {
+      try { localStorage.setItem("flowfree_sfx", JSON.stringify(!prev)); } catch { /* ignore */ }
       return !prev;
     });
   }, []);
 
+  const toggleMusic = useCallback(() => {
+    // Ensure AudioContext is created on first user interaction
+    const ctx = ensureCtx();
+    setMusicEnabled((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("flowfree_music", JSON.stringify(next)); } catch { /* ignore */ }
+      // Start immediately on enable (ctx might be freshly created)
+      if (next && ctx && !musicRef.current) {
+        musicRef.current = startAmbientMusic(ctx);
+      } else if (!next && ctx && musicRef.current) {
+        stopAmbientMusic(ctx, musicRef.current);
+        musicRef.current = null;
+      }
+      return next;
+    });
+  }, [ensureCtx]);
+
+  // ── Sound effects ──────────────────────────────────────────
+
   const playMove = useCallback(() => {
-    if (!enabled) return;
+    if (!sfxEnabled) return;
     const ctx = ensureCtx();
     if (!ctx) return;
     playTone(ctx, 440, 0.06, "sine", 0.1);
-  }, [enabled, ensureCtx]);
+  }, [sfxEnabled, ensureCtx]);
 
   const playComplete = useCallback(() => {
-    if (!enabled) return;
+    if (!sfxEnabled) return;
     const ctx = ensureCtx();
     if (!ctx) return;
-    // Ascending two-note chord
     playTone(ctx, 523, 0.12, "sine", 0.15);
     playTone(ctx, 659, 0.12, "sine", 0.12);
-  }, [enabled, ensureCtx]);
+  }, [sfxEnabled, ensureCtx]);
 
   const playSolve = useCallback(() => {
-    if (!enabled) return;
+    if (!sfxEnabled) return;
     const ctx = ensureCtx();
     if (!ctx) return;
-    // Fanfare arpeggio
-    const notes = [261, 330, 392, 523, 659];
-    notes.forEach((f, i) => {
+    [261, 330, 392, 523, 659].forEach((f, i) => {
       setTimeout(() => playTone(ctx, f, 0.18, "triangle", 0.18), i * 80);
     });
-  }, [enabled, ensureCtx]);
+  }, [sfxEnabled, ensureCtx]);
 
   const playReset = useCallback(() => {
-    if (!enabled) return;
+    if (!sfxEnabled) return;
     const ctx = ensureCtx();
     if (!ctx) return;
     playTone(ctx, 300, 0.1, "sawtooth", 0.08);
-  }, [enabled, ensureCtx]);
+  }, [sfxEnabled, ensureCtx]);
 
-  return { enabled, toggleSound, playMove, playComplete, playSolve, playReset };
+  const playHint = useCallback(() => {
+    if (!sfxEnabled) return;
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    // Gentle double-ping
+    playTone(ctx, 880, 0.08, "sine", 0.12);
+    setTimeout(() => playTone(ctx, 1100, 0.08, "sine", 0.1), 100);
+  }, [sfxEnabled, ensureCtx]);
+
+  return {
+    sfxEnabled,
+    musicEnabled,
+    toggleSfx,
+    toggleMusic,
+    playMove,
+    playComplete,
+    playSolve,
+    playReset,
+    playHint,
+    // Legacy alias so existing call-sites don't break
+    enabled: sfxEnabled,
+    toggleSound: toggleSfx,
+  };
 }

@@ -1,5 +1,7 @@
 // ============================================================
 // GameContainer.tsx — Top-level game orchestrator component
+// Wires together: puzzle selection, game logic, sounds,
+// hint system, keyboard navigation, and all UI panels.
 // ============================================================
 
 "use client";
@@ -8,37 +10,49 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import GameBoard from "./GameBoard";
-import Header from "@/components/UI/Header";
-import HUD from "@/components/UI/HUD";
-import WinModal from "@/components/UI/WinModal";
+import Header    from "@/components/UI/Header";
+import HUD       from "@/components/UI/HUD";
+import WinModal  from "@/components/UI/WinModal";
 import LevelSelect from "@/components/UI/LevelSelect";
 
-import { useGame } from "@/hooks/useGame";
+import { useGame }  from "@/hooks/useGame";
 import { useSound } from "@/hooks/useSound";
 
-import { PUZZLES } from "@/lib/puzzles";
-import { Puzzle } from "@/lib/types";
+import { PUZZLES }  from "@/lib/puzzles";
+import { Puzzle }   from "@/lib/types";
 
 export default function GameContainer() {
   // ── Puzzle selection ──────────────────────────────────────
-  const [puzzle, setPuzzle] = useState<Puzzle>(PUZZLES.easy[0]);
+  const [puzzle,     setPuzzle]     = useState<Puzzle>(PUZZLES.easy[0]);
   const [showLevels, setShowLevels] = useState(false);
-  const [showWin, setShowWin] = useState(false);
+  const [showWin,    setShowWin]    = useState(false);
 
   // ── Game logic ────────────────────────────────────────────
   const {
     state,
     coverage,
+    hintAvailable,
     onCellDown,
     onCellEnter,
     onPointerUp,
     onReset,
     onTogglePause,
+    onHint,
     getBestScore,
   } = useGame(puzzle);
 
   // ── Sound ─────────────────────────────────────────────────
-  const { enabled: soundEnabled, toggleSound, playMove, playComplete, playSolve, playReset } = useSound();
+  const {
+    sfxEnabled,
+    musicEnabled,
+    toggleSfx,
+    toggleMusic,
+    playMove,
+    playComplete,
+    playSolve,
+    playReset,
+    playHint,
+  } = useSound();
 
   // ── Show win modal ────────────────────────────────────────
   useEffect(() => {
@@ -51,22 +65,19 @@ export default function GameContainer() {
     }
   }, [state.solved, playSolve]);
 
-  // ── Puzzle navigation helpers ─────────────────────────────
-  const allPuzzles = [
-    ...PUZZLES.easy,
-    ...PUZZLES.medium,
-    ...PUZZLES.hard,
-  ];
-
-  const currentIndex = allPuzzles.findIndex((p) => p.id === puzzle.id);
-  const hasNext = currentIndex < allPuzzles.length - 1;
+  // ── Flat puzzle list for prev/next navigation ─────────────
+  const allPuzzles  = [...PUZZLES.easy, ...PUZZLES.medium, ...PUZZLES.hard];
+  const currentIdx  = allPuzzles.findIndex((p) => p.id === puzzle.id);
+  const hasNext     = currentIdx < allPuzzles.length - 1;
+  const hasPrev     = currentIdx > 0;
 
   const handleNext = useCallback(() => {
-    if (hasNext) {
-      setPuzzle(allPuzzles[currentIndex + 1]);
-      setShowWin(false);
-    }
-  }, [allPuzzles, currentIndex, hasNext]);
+    if (hasNext) { setPuzzle(allPuzzles[currentIdx + 1]); setShowWin(false); }
+  }, [allPuzzles, currentIdx, hasNext]);
+
+  const handlePrev = useCallback(() => {
+    if (hasPrev) { setPuzzle(allPuzzles[currentIdx - 1]); setShowWin(false); }
+  }, [allPuzzles, currentIdx, hasPrev]);
 
   const handleSelect = useCallback((p: Puzzle) => {
     setPuzzle(p);
@@ -79,6 +90,35 @@ export default function GameContainer() {
     playReset();
     setShowWin(false);
   }, [onReset, playReset]);
+
+  const handleHint = useCallback(() => {
+    onHint();
+    playHint();
+  }, [onHint, playHint]);
+
+  // ── Keyboard controls ─────────────────────────────────────
+  // R = reset, P = pause, H = hint, ← / → = prev/next puzzle,
+  // Escape = close levels / win modal
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      // Ignore if typing in an input
+      if ((e.target as HTMLElement).tagName === "INPUT") return;
+
+      switch (e.key) {
+        case "r": case "R": handleReset(); break;
+        case "p": case "P": onTogglePause(); break;
+        case "h": case "H": handleHint(); break;
+        case "ArrowRight": handleNext(); break;
+        case "ArrowLeft":  handlePrev(); break;
+        case "Escape":
+          setShowLevels(false);
+          setShowWin(false);
+          break;
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleReset, onTogglePause, handleHint, handleNext, handlePrev]);
 
   const best = getBestScore();
 
@@ -98,6 +138,14 @@ export default function GameContainer() {
           showLevels={showLevels}
           onToggleLevels={() => setShowLevels((v) => !v)}
         />
+
+        {/* Keyboard shortcut hints (desktop only) */}
+        <div className="hidden sm:flex gap-3 justify-end text-[10px] text-white/20 tracking-widest uppercase select-none">
+          <span>[R] Reset</span>
+          <span>[P] Pause</span>
+          <span>[H] Hint</span>
+          <span>[←/→] Levels</span>
+        </div>
 
         {/* Level selector (collapsible) */}
         <AnimatePresence>
@@ -134,10 +182,14 @@ export default function GameContainer() {
           bestMoves={best?.moves ?? null}
           bestTime={best?.time ?? null}
           paused={state.paused}
-          soundEnabled={soundEnabled}
+          sfxEnabled={sfxEnabled}
+          musicEnabled={musicEnabled}
+          hintAvailable={hintAvailable}
           onReset={handleReset}
           onTogglePause={onTogglePause}
-          onToggleSound={toggleSound}
+          onToggleSfx={toggleSfx}
+          onToggleMusic={toggleMusic}
+          onHint={handleHint}
         />
       </div>
 
@@ -149,10 +201,7 @@ export default function GameContainer() {
         time={state.elapsedTime}
         bestMoves={best?.moves ?? null}
         bestTime={best?.time ?? null}
-        onReplay={() => {
-          handleReset();
-          setShowWin(false);
-        }}
+        onReplay={() => { handleReset(); setShowWin(false); }}
         onNext={handleNext}
         hasNext={hasNext}
       />

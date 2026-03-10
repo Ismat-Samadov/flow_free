@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   title: "Flow Free — Connect the Dots",
   description:
     "A neon-themed Flow Free puzzle game. Connect colored dots and fill the entire grid!",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export const viewport: Viewport = {
