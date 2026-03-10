@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* ── Custom layer: glass-card utility ──────────────────────── */
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* ── Base resets ────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  /* Prevent pull-to-refresh / text selection on mobile during drag */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Smooth font rendering ──────────────────────────────────── */
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0a0a0a;
+  color: #fff;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
