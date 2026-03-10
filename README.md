@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Flow Free — Connect the Dots
+
+A neon-themed **Flow Free** puzzle game built with **Next.js 16**, **TypeScript**, and **Tailwind CSS**.
+
+Connect pairs of colored dots so every cell on the grid is filled.
+
+---
+
+## Features
+
+| Feature | Details |
+|---|---|
+| **15 hand-crafted puzzles** | 5 Easy (5×5), 5 Medium (7×7), 5 Hard (9×9) |
+| **Hint system** | Auto-solves one step using a backtracking engine |
+| **High scores** | Best moves & time stored in localStorage |
+| **Sound FX** | Procedural Web Audio — no audio files needed |
+| **Background music** | Ambient neon-synth loop, toggleable |
+| **Pause / Resume** | Full pause support with overlay |
+| **Star rating** | 1–3 stars based on move efficiency |
+| **Keyboard shortcuts** | `R` Reset · `P` Pause · `H` Hint · `←/→` Prev/Next |
+| **Touch support** | Full pointer-event drag on mobile |
+| **Canvas rendering** | HTML5 Canvas with neon glow effects |
+
+---
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How to Play
 
-## Learn More
+1. Click (or touch) a colored dot to start drawing a path.
+2. Drag through cells to connect it to the matching dot.
+3. Fill **every** cell on the grid to win.
+4. Use **Hint** if you get stuck — it auto-extends the first incomplete path by one step.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Keyboard Shortcuts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Key | Action |
+|---|---|
+| `R` | Reset current puzzle |
+| `P` | Pause / Resume |
+| `H` | Apply hint |
+| `←` | Previous puzzle |
+| `→` | Next puzzle |
+| `Esc` | Close panels |
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/
+│   ├── layout.tsx        # Root layout + metadata
+│   ├── page.tsx          # Entry point
+│   ├── globals.css       # Tailwind + glass-card utility
+│   └── favicon.svg       # SVG favicon
+├── components/
+│   ├── Game/
+│   │   ├── GameBoard.tsx      # Canvas renderer + pointer events
+│   │   └── GameContainer.tsx  # Orchestrator (state, sound, keyboard)
+│   └── UI/
+│       ├── Header.tsx         # Title bar + levels toggle
+│       ├── HUD.tsx            # Stats + control buttons
+│       ├── WinModal.tsx       # Victory overlay with stars
+│       └── LevelSelect.tsx    # Difficulty/puzzle picker
+├── hooks/
+│   ├── useGame.ts    # Game state, timer, hint system
+│   └── useSound.ts   # SFX + ambient music (Web Audio API)
+└── lib/
+    ├── types.ts      # Shared TypeScript types
+    ├── constants.ts  # Color palette + visual constants
+    ├── puzzles.ts    # All 15 puzzle definitions
+    ├── gameLogic.ts  # Pure game-state functions
+    └── solver.ts     # Backtracking puzzle solver (for hints)
+```
+
+---
+
+## Tech Stack
+
+- **Next.js 16** (App Router)
+- **TypeScript** (strict mode)
+- **Tailwind CSS v4**
+- **Framer Motion** — UI animations
+- **HTML5 Canvas** — board rendering
+- **Web Audio API** — procedural sound & music
+
+---
+
+## Deployment
+
+Deploy to Vercel with zero configuration:
+
+```bash
+npx vercel
+```
+
+Or push to GitHub and connect the repo on [vercel.com](https://vercel.com).
